@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Global Notice - Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-900 text-white p-4 md:p-6 font-sans pb-20">
+
+    <div class="max-w-md mx-auto">
+        <!-- Header -->
+        <div class="flex items-center gap-4 mb-8">
+            <a href="admin-dashboard.html" class="bg-slate-800 hover:bg-slate-600 p-2 rounded-xl transition-all active:scale-95">⬅️</a>
+            <h2 class="text-2xl font-black italic text-yellow-500 uppercase">GLOBAL NOTICES</h2>
+        </div>
+
+        <!-- Input Box Section -->
+        <div class="bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-2xl mb-8">
+            <label id="boxLabel" class="text-[10px] text-gray-500 font-black uppercase mb-3 block tracking-wider">नया नोटिस लिखें</label>
+            <textarea id="noticeText" placeholder="जैसे: आज रात 10 बजे फ्री मेगा टूर्नामेंट है!" class="w-full bg-slate-900 p-4 rounded-2xl h-40 outline-none border border-slate-700 focus:border-yellow-500 mb-4 text-sm resize-none"></textarea>
+            
+            <button id="submitBtn" onclick="publishNotice()" class="w-full bg-yellow-600 hover:bg-yellow-500 py-4 rounded-2xl font-black shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider">
+                PUBLISH NOTICE 📢
+            </button>
+        </div>
+
+        <!-- Notices List Section -->
+        <div class="space-y-4">
+            <h3 class="text-xs font-black text-gray-400 uppercase tracking-widest px-2">सभी सक्रिय नोटिस (<span id="noticeCount">0</span>)</h3>
+            <div id="noticesList" class="space-y-4">
+                <!-- नोटिस यहाँ लाइव लोड होंगे -->
+                <p class="text-gray-500 italic text-center py-4">लोड हो रहा है...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // अपनी सही फायरबेस क्रेडेंशियल्स का उपयोग करें
+        const firebaseConfig = {
+            apiKey: "AIzaSyC8NQ_bmJl-qRy0H_AzJ968bWwzhwMAsGw",
+            authDomain: "firezone-a0a02.firebaseapp.com",
+            projectId: "firezone-a0a02",
+            storageBucket: "firezone-a0a02.firebasestorage.app",
+            messagingSenderId: "1068854164782",
+            appId: "1:1068854164782:web:8a627cdf687583debecebf"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        let editModeId = null; // यह ट्रैक करेगा कि क्या हम एडिट कर रहे हैं
+
+        // 1. सभी नोटिसों को लाइव सुनना (Realtime Fetch - नई तारीख पहले आएगी)
+        db.collection("notices").orderBy("time", "desc").onSnapshot(snap => {
+            const listContainer = document.getElementById('noticesList');
+            document.getElementById('noticeCount').innerText = snap.size;
+            
+            if (snap.empty) {
+                listContainer.innerHTML = `<p class="text-gray-500 italic text-center py-6 bg-slate-800/40 rounded-2xl border border-slate-800">वर्तमान में कोई नोटिस पब्लिश नहीं है।</p>`;
+                return;
+            }
+
+            let html = "";
+            snap.forEach(doc => {
+                const data = doc.data();
+                
+                let formattedTime = "N/A";
+                if(data.time) {
+                    formattedTime = data.time.toDate().toLocaleString('hi-IN', { hour12: true });
+                }
+
+                // टेक्स्ट से सिंगल/डबल कोट्स का एरर न आए इसलिए रिप्लेसमेंट
+                const safeText = (data.text || "").replace(/['"]/g, '\\$&').replace(/\n/g, '\\n');
+
+                html += `
+                    <div class="bg-slate-800/80 p-5 rounded-3xl border border-slate-700/60 shadow-lg flex flex-col gap-3">
+                        <p class="text-sm text-slate-200 whitespace-pre-wrap">${data.text}</p>
+                        
+                        <div class="flex justify-between items-center border-t border-slate-700/50 pt-3 mt-1">
+                            <span class="text-[9px] text-gray-500 font-mono">📅 ${formattedTime}</span>
+                            
+                            <div class="flex gap-2">
+                                <button onclick="startEdit('${doc.id}', '${safeText}')" class="text-xs font-bold text-blue-400 bg-blue-500/10 hover:bg-blue-500 hover:text-white px-3 py-1.5 rounded-xl border border-blue-500/20 transition-all active:scale-95">
+                                    📝 Edit
+                                </button>
+                                <button onclick="deleteNotice('${doc.id}')" class="text-xs font-bold text-red-400 bg-red-500/10 hover:bg-red-500 hover:text-white px-3 py-1.5 rounded-xl border border-red-500/20 transition-all active:scale-95">
+                                    🗑️ Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            listContainer.innerHTML = html;
+        });
+
+        // 2. नोटिस पब्लिश या अपडेट करना
+        function publishNotice() {
+            const text = document.getElementById('noticeText').value.trim();
+            if (!text) return alert("कृपया नोटिस बॉक्स में कुछ लिखें!");
+
+            if (editModeId) {
+                // एडिट मोड: पुराने नोटिस को अपडेट करें
+                db.collection("notices").doc(editModeId).update({
+                    text: text,
+                    time: firebase.firestore.FieldValue.serverTimestamp() // अपडेट का समय दर्ज करें
+                })
+                .then(() => {
+                    alert("Notice Updated Successfully!");
+                    resetForm();
+                })
+                .catch(err => alert("Error: " + err.message));
+            } else {
+                // नॉर्मल मोड: एक नया अलग नोटिस जोड़ें
+                db.collection("notices").add({
+                    text: text,
+                    time: firebase.firestore.FieldValue.serverTimestamp()
+                })
+                .then(() => {
+                    alert("New Notice Published!");
+                    resetForm();
+                })
+                .catch(err => alert("Error: " + err.message));
+            }
+        }
+
+        // 3. किसी नोटिस को एडिट मोड में लाना
+        function startEdit(id, text) {
+            editModeId = id;
+            document.getElementById('noticeText').value = text.replace(/\\n/g, '\n');
+            document.getElementById('boxLabel').innerText = "नोटिस को एडिट करें 🛠️";
+            
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.innerText = "UPDATE NOTICE 🔄";
+            submitBtn.className = "w-full bg-blue-600 hover:bg-blue-500 py-4 rounded-2xl font-black shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider";
+            
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+            document.getElementById('noticeText').focus();
+        }
+
+        // 4. नोटिस डिलीट करना
+        function deleteNotice(id) {
+            if (confirm("क्या आप वाकई इस नोटिस को डिलीट करना चाहते हैं?")) {
+                db.collection("notices").doc(id).delete()
+                .then(() => {
+                    alert("Notice Deleted!");
+                    if(editModeId === id) resetForm();
+                })
+                .catch(err => alert("Error: " + err.message));
+            }
+        }
+
+        // फॉर्म को वापस नॉर्मल करना
+        function resetForm() {
+            editModeId = null;
+            document.getElementById('noticeText').value = "";
+            document.getElementById('boxLabel').innerText = "नया नोटिस लिखें";
+            
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.innerText = "PUBLISH NOTICE 📢";
+            submitBtn.className = "w-full bg-yellow-600 hover:bg-yellow-500 py-4 rounded-2xl font-black shadow-lg active:scale-95 transition-all text-sm uppercase tracking-wider";
+        }
+    </script>
+</body>
+</html>

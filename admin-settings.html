@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Master Settings - FireZone Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Firebase Scripts -->
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-900 text-white p-4 pb-20">
+
+    <div class="max-w-2xl mx-auto">
+        <div class="flex items-center gap-4 mb-8">
+            <a href="admin-dashboard.html" class="bg-slate-800 p-2 rounded-xl text-xl">⬅️</a>
+            <h2 class="text-2xl font-black text-purple-500 uppercase tracking-tighter">Master Settings</h2>
+        </div>
+
+        <div id="loadingMsg" class="text-center text-orange-500 font-bold mb-4">सेटिंग्स लोड हो रही हैं...</div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <!-- Payment Settings -->
+            <div class="bg-slate-800 p-6 rounded-3xl border border-slate-700 col-span-1 md:col-span-2 shadow-xl">
+                <h3 class="text-xs font-black text-gray-500 uppercase mb-4 tracking-widest">💰 Payment Settings</h3>
+                <label class="text-[10px] uppercase text-gray-400 font-bold">Your UPI ID (For QR Code)</label>
+                <input type="text" id="upiId" placeholder="example@upi" class="w-full bg-slate-900 p-4 rounded-2xl outline-none border border-slate-700 mt-2 focus:border-purple-500">
+            </div>
+
+            <!-- Social Links -->
+            <div class="bg-slate-800 p-6 rounded-3xl border border-slate-700 space-y-4 shadow-xl">
+                <h3 class="text-xs font-black text-gray-500 uppercase mb-2 tracking-widest">📱 Social Media</h3>
+                <input type="text" id="whatsapp" placeholder="WhatsApp Number" class="w-full bg-slate-900 p-3 rounded-xl outline-none border border-slate-700 text-sm">
+                <input type="text" id="telegram" placeholder="Telegram Link" class="w-full bg-slate-900 p-3 rounded-xl outline-none border border-slate-700 text-sm">
+                <input type="text" id="youtube" placeholder="YouTube Link" class="w-full bg-slate-900 p-3 rounded-xl outline-none border border-slate-700 text-sm">
+                <input type="text" id="instagram" placeholder="Instagram Link" class="w-full bg-slate-900 p-3 rounded-xl outline-none border border-slate-700 text-sm">
+            </div>
+
+            <!-- Support & Bot -->
+            <div class="bg-slate-800 p-6 rounded-3xl border border-slate-700 space-y-4 shadow-xl">
+                <h3 class="text-xs font-black text-gray-500 uppercase mb-2 tracking-widest">🎧 Support & Chat</h3>
+                <input type="text" id="facebook" placeholder="Facebook Link" class="w-full bg-slate-900 p-3 rounded-xl outline-none border border-slate-700 text-sm">
+                <input type="text" id="email" placeholder="Support Email" class="w-full bg-slate-900 p-3 rounded-xl outline-none border border-slate-700 text-sm">
+                <input type="text" id="chatbot" placeholder="Chatbot Link" class="w-full bg-slate-900 p-3 rounded-xl outline-none border border-slate-700 text-sm">
+            </div>
+
+            <!-- Multi Photo Links Section -->
+            <div class="bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-xl col-span-1 md:col-span-2">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xs font-black text-gray-500 uppercase tracking-widest">🖼️ Photo Links (Multiple)</h3>
+                    <button type="button" onclick="addLinkField('photoContainer', '')" class="bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 text-xs font-bold px-3 py-1.5 rounded-xl border border-purple-500/30 transition-all">+ Add Photo</button>
+                </div>
+                <div id="photoContainer" class="space-y-2">
+                    <!-- Dynamic fields will injection here -->
+                </div>
+            </div>
+
+            <!-- Multi Video Links Section -->
+            <div class="bg-slate-800 p-6 rounded-3xl border border-slate-700 shadow-xl col-span-1 md:col-span-2">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xs font-black text-gray-500 uppercase tracking-widest">🎥 Video Links (Multiple)</h3>
+                    <button type="button" onclick="addLinkField('videoContainer', '')" class="bg-purple-600/20 hover:bg-purple-600/40 text-purple-400 text-xs font-bold px-3 py-1.5 rounded-xl border border-purple-500/30 transition-all">+ Add Video</button>
+                </div>
+                <div id="videoContainer" class="space-y-2">
+                    <!-- Dynamic fields will injection here -->
+                </div>
+            </div>
+
+            <!-- Privacy Policy -->
+            <div class="bg-slate-800 p-6 rounded-3xl border border-slate-700 col-span-1 md:col-span-2 shadow-xl">
+                <h3 class="text-xs font-black text-gray-500 uppercase mb-4 tracking-widest">📝 Privacy Policy</h3>
+                <textarea id="privacyPolicy" placeholder="यहाँ अपने ऐप की पॉलिसी लिखें..." class="w-full bg-slate-900 p-4 rounded-2xl h-44 outline-none border border-slate-700 text-sm leading-relaxed"></textarea>
+            </div>
+        </div>
+
+        <button onclick="saveSettings()" id="saveBtn" class="w-full bg-purple-600 hover:bg-purple-700 py-4 rounded-2xl font-black mt-8 shadow-lg shadow-purple-600/30 active:scale-95 transition-all uppercase tracking-widest">
+            UPDATE APP SETTINGS
+        </button>
+    </div>
+
+    <script>
+        // 1. Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyC8NQ_bmJl-qRy0H_AzJ968bWwzhwMAsGw",
+            authDomain: "firezone-a0a02.firebaseapp.com",
+            projectId: "firezone-a0a02",
+            storageBucket: "firezone-a0a02.firebasestorage.app",
+            messagingSenderId: "1068854164782",
+            appId: "1:1068854164782:web:8a627cdf687583debecebf"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // स्क्रीन पर नया इनपुट फ़ील्ड जोड़ने का हेल्पर फ़ंक्शन
+        function addLinkField(containerId, value = "") {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = "flex items-center gap-2 link-row";
+            div.innerHTML = `
+                <input type="text" value="${value}" placeholder="Enter Link URL" class="w-full bg-slate-900 p-3 rounded-xl outline-none border border-slate-700 text-sm target-input">
+                <button type="button" onclick="this.parentElement.remove()" class="bg-red-500/10 hover:bg-red-500/30 text-red-400 border border-red-500/20 px-3 py-3 rounded-xl transition-all text-xs">🗑️</button>
+            `;
+            container.appendChild(div);
+        }
+
+        // किसी कंटेनर के सभी इनपुट बॉक्स से डेटा एरे के रूप में कलेक्ट करना
+        function getFieldsData(containerId) {
+            const container = document.getElementById(containerId);
+            const inputs = container.querySelectorAll('.target-input');
+            let list = [];
+            inputs.forEach(input => {
+                if(input.value.trim() !== "") {
+                    list.push(input.value.trim());
+                }
+            });
+            return list;
+        }
+
+        // 2. डेटाबेस से पुरानी सेटिंग्स लोड करना
+        function fetchSettings() {
+            db.collection("settings").doc("appData").get()
+            .then((doc) => {
+                document.getElementById('loadingMsg').style.display = 'none';
+                
+                // पहले इनपुट एरिया साफ़ करें
+                document.getElementById('photoContainer').innerHTML = "";
+                document.getElementById('videoContainer').innerHTML = "";
+
+                if (doc.exists) {
+                    const d = doc.data();
+                    document.getElementById('upiId').value = d.upiId || "";
+                    document.getElementById('whatsapp').value = d.whatsapp || "";
+                    document.getElementById('telegram').value = d.telegram || "";
+                    document.getElementById('youtube').value = d.youtube || "";
+                    document.getElementById('instagram').value = d.instagram || "";
+                    document.getElementById('facebook').value = d.facebook || "";
+                    document.getElementById('email').value = d.email || "";
+                    document.getElementById('chatbot').value = d.chatbot || "";
+                    document.getElementById('privacyPolicy').value = d.privacyPolicy || "";
+                    
+                    // फोटो लिंक्स लोड करना
+                    if(d.photoLinks && Array.isArray(d.photoLinks) && d.photoLinks.length > 0) {
+                        d.photoLinks.forEach(url => addLinkField('photoContainer', url));
+                    } else {
+                        addLinkField('photoContainer', ''); // डिफ़ॉल्ट खाली बॉक्स
+                    }
+
+                    // वीडियो लिंक्स लोड करना
+                    if(d.videoLinks && Array.isArray(d.videoLinks) && d.videoLinks.length > 0) {
+                        d.videoLinks.forEach(url => addLinkField('videoContainer', url));
+                    } else {
+                        addLinkField('videoContainer', ''); // डिफ़ॉल्ट खाली बॉक्स
+                    }
+
+                    console.log("Settings loaded!");
+                } else {
+                    // अगर डेटाबेस में कुछ नहीं मिला तो 1-1 खाली फ़ील्ड दिखाएं
+                    addLinkField('photoContainer', '');
+                    addLinkField('videoContainer', '');
+                    console.log("No settings found, creating new!");
+                }
+            })
+            .catch((error) => {
+                console.error("Error loading settings:", error);
+                alert("Error loading data: " + error.message);
+            });
+        }
+
+        // 3. सेटिंग्स को सेव करना
+        function saveSettings() {
+            const btn = document.getElementById('saveBtn');
+            btn.innerText = "UPDATING...";
+            btn.disabled = true;
+
+            // मल्टीपल इनपुट्स से एरे डेटा निकालना
+            const photoLinksArray = getFieldsData('photoContainer');
+            const videoLinksArray = getFieldsData('videoContainer');
+
+            const updatedData = {
+                upiId: document.getElementById('upiId').value,
+                whatsapp: document.getElementById('whatsapp').value,
+                telegram: document.getElementById('telegram').value,
+                youtube: document.getElementById('youtube').value,
+                instagram: document.getElementById('instagram').value,
+                facebook: document.getElementById('facebook').value,
+                email: document.getElementById('email').value,
+                chatbot: document.getElementById('chatbot').value,
+                privacyPolicy: document.getElementById('privacyPolicy').value,
+                photoLinks: photoLinksArray,   // एरे के रूप में सेव होगा
+                videoLinks: videoLinksArray,   // एरे के रूप में सेव होगा
+                lastUpdated: new Date()
+            };
+
+            // Firestore में डेटा सेव करना (merge: true)
+            db.collection("settings").doc("appData").set(updatedData, { merge: true })
+            .then(() => {
+                alert("✅ सेटिंग्स सफलतापूर्वक अपडेट हो गईं!");
+                btn.innerText = "UPDATE APP SETTINGS";
+                btn.disabled = false;
+            })
+            .catch((error) => {
+                console.error("Error saving settings:", error);
+                alert("❌ गलती हुई: " + error.message);
+                btn.innerText = "UPDATE APP SETTINGS";
+                btn.disabled = false;
+            });
+        }
+
+        // पेज लोड होते ही डेटा लाएं
+        window.onload = fetchSettings;
+    </script>
+</body>
+</html>

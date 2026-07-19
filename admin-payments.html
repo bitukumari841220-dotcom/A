@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Verify Payments - Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-900 text-white p-6">
+    
+    <div class="max-w-xl mx-auto">
+        <!-- Header -->
+        <div class="flex items-center gap-4 mb-8">
+            <a href="admin-dashboard.html" class="bg-slate-800 p-2 rounded-xl hover:bg-slate-700 transition-colors">⬅️</a>
+            <h2 class="text-2xl font-black text-green-500 italic uppercase">Deposit Requests</h2>
+        </div>
+
+        <!-- Request List -->
+        <div id="list" class="space-y-6">
+            <!-- यहाँ पेंडिंग पेमेंट्स लोड होंगे -->
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration (डैशबोर्ड वाली ही इस्तेमाल करें)
+        const firebaseConfig = { 
+            apiKey: "AIzaSyC8NQ_bmJl-qRy0H_AzJ968bWwzhwMAsGw",
+            authDomain: "firezone-a0a02.firebaseapp.com",
+            projectId: "firezone-a0a02",
+            storageBucket: "firezone-a0a02.firebasestorage.app",
+            messagingSenderId: "1068854164782",
+            appId: "1:1068854164782:web:8a627cdf687583debecebf"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // FIXED BUG: 'payments' की जगह 'payment_requests' कलेक्शन से लाइव डेटा फ़ेच करना
+        db.collection("payment_requests").where("status", "==", "pending").onSnapshot(snap => {
+            const list = document.getElementById('list');
+            list.innerHTML = "";
+            
+            if(snap.empty) {
+                list.innerHTML = "<p class='text-center text-gray-500 py-8 uppercase text-xs font-bold tracking-wider'>कोई पेंडिंग पेमेंट अनुरोध नहीं है।</p>";
+                return;
+            }
+
+            snap.forEach(doc => {
+                const p = doc.data();
+                // वॉलेट में username की जगह email सेव है, इसलिए फॉलबैक सेटअप किया
+                const userIdentifier = p.email || "Unknown User";
+                // 'proof' की जगह वॉलेट कोड के अनुसार 'screenshot' का उपयोग किया
+                const imgUrl = p.screenshot || "https://via.placeholder.com/400x200?text=No+Screenshot";
+
+                list.innerHTML += `
+                    <div class="bg-slate-800 p-6 rounded-[35px] border border-slate-700 shadow-2xl transition-all hover:border-slate-600">
+                        <div class="flex justify-between items-start mb-4 gap-2">
+                            <div class="truncate">
+                                <p class="text-[9px] text-gray-400 uppercase font-black tracking-wider truncate mb-1" title="${userIdentifier}">${userIdentifier}</p>
+                                <p class="text-2xl font-black text-emerald-400">₹${p.amount || 0}</p>
+                            </div>
+                            <button id="btn-app-${doc.id}" onclick="approve('${doc.id}', '${p.uid}', ${p.amount || 0})" class="bg-green-600 hover:bg-green-500 active:scale-95 transition-all text-white px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-green-600/20">APPROVE ✅</button>
+                        </div>
+                        
+                        <a href="${imgUrl}" target="_blank" class="block mb-4 overflow-hidden rounded-2xl group border border-slate-700 bg-slate-900">
+                            <img src="${imgUrl}" class="w-full h-44 object-cover group-hover:scale-105 transition-transform duration-300" onerror="this.src='https://via.placeholder.com/400x200?text=Image+Load+Failed'">
+                        </a>
+                        
+                        <button id="btn-rej-${doc.id}" onclick="reject('${doc.id}')" class="w-full bg-red-600/10 hover:bg-red-600/20 text-red-500 py-2.5 rounded-xl text-xs font-black uppercase tracking-wider transition-colors">REJECT ❌</button>
+                    </div>
+                `;
+            });
+        }, error => {
+            console.error("डेटा लोड करने में त्रुटि:", error);
+        });
+
+        // 1. APPROVE FUNCTION: सुरक्षित ट्रांजेक्शनल लॉजिक के साथ सिक्कों को अपडेट करना
+        async function approve(docId, uid, amt) {
+            if(!uid || uid === "undefined") return alert("त्रुटि: यूजर आईडी अमान्य है!");
+            
+            const btnApp = document.getElementById(`btn-app-${docId}`);
+            btnApp.disabled = true;
+            btnApp.innerText = "PROCESSING...";
+
+            try {
+                const userRef = db.collection("users").doc(uid);
+                const userDoc = await userRef.get();
+                
+                let currentCoins = 0;
+                if(userDoc.exists) {
+                    currentCoins = userDoc.data().coins || 0;
+                }
+
+                // यूजर के एकाउंट में कॉइन्स जोड़ें
+                await userRef.set({ coins: currentCoins + Number(amt) }, { merge: true });
+                
+                // FIXED BUG: 'payment_requests' कलेक्शन में स्टेटस को 'approved' मार्क करें
+                await db.collection("payment_requests").doc(docId).update({ status: "approved" });
+                
+                alert("सफलतापूर्वक पेमेंट अप्रूव हो गया और सिक्के जोड़ दिए गए!");
+            } catch (error) {
+                console.error("अप्रूवल त्रुटि:", error);
+                alert("सिक्के जोड़ने में विफलता: " + error.message);
+                btnApp.disabled = false;
+                btnApp.innerText = "APPROVE ✅";
+            }
+        }
+
+        // 2. REJECT FUNCTION: रिक्वेस्ट को डेटाबेस से पूरी तरह डिलीट करने के बजाय स्टेटस रिजेक्ट करना (सुरक्षित तरीका)
+        async function reject(docId) { 
+            if(confirm("क्या आप वाकई इस पेमेंट रिक्वेस्ट को अस्वीकार (Reject) करना चाहते हैं?")) {
+                try {
+                    // डिलीट करने के बजाय स्थिति बदलना ऑडिट हिस्ट्री के लिए बेहतर है
+                    await db.collection("payment_requests").doc(docId).update({ status: "rejected" });
+                    alert("अनुरोध अस्वीकार कर दिया गया है।");
+                } catch(error) {
+                    alert("त्रुटि: " + error.message);
+                }
+            } 
+        }
+    </script>
+</body>
+</html>

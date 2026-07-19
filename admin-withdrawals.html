@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Withdrawals - Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore-compat.js"></script>
+</head>
+<body class="bg-slate-900 text-white p-4 md:p-6 min-h-screen font-sans">
+    
+    <div class="max-w-xl mx-auto">
+        <!-- Header Section -->
+        <div class="flex items-center gap-4 mb-8 bg-slate-800/50 p-4 rounded-3xl border border-slate-700/50 backdrop-blur-sm">
+            <a href="admin-dashboard.html" class="bg-slate-700 hover:bg-slate-600 p-2.5 rounded-2xl transition-all active:scale-95 text-lg shadow-md">⬅️</a>
+            <div>
+                <h2 class="text-xl font-black text-red-500 italic uppercase tracking-wide">Withdrawal Panel</h2>
+                <p class="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5">Live Requests</p>
+            </div>
+        </div>
+
+        <!-- Request List Container -->
+        <div id="list" class="space-y-4">
+            <!-- यहाँ लाइव पेंडिंग विड्रॉल लोड होंगे -->
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = { 
+            apiKey: "AIzaSyC8NQ_bmJl-qRy0H_AzJ968bWwzhwMAsGw",
+            authDomain: "firezone-a0a02.firebaseapp.com",
+            projectId: "firezone-a0a02",
+            storageBucket: "firezone-a0a02.firebasestorage.app",
+            messagingSenderId: "1068854164782",
+            appId: "1:1068854164782:web:8a627cdf687583debecebf"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // लाइव डेटा फ़ेच (withdraw_requests कलेक्शन से)
+        db.collection("withdraw_requests").where("status", "==", "pending").onSnapshot(snap => {
+            const list = document.getElementById('list');
+            list.innerHTML = "";
+            
+            if(snap.empty) {
+                list.innerHTML = `
+                    <div class="text-center bg-slate-800/30 border border-dashed border-slate-700 py-12 rounded-[30px]">
+                        <p class='text-gray-500 uppercase text-xs font-black tracking-widest'>कोई पेंडिंग विड्रॉल अनुरोध नहीं है</p>
+                    </div>`;
+                return;
+            }
+
+            snap.forEach(doc => {
+                const w = doc.data();
+                
+                // डेटाबेस से UPI ID और फ़ोन नंबर निकालना (सभी संभावित फ़ील्ड्स चेक किए गए हैं)
+                const upiAddress = w.upi || w.upiId || w.wUpi || "UPI Not Provided";
+                const phoneNumber = w.phone || w.phoneNumber || w.mobile || "No Phone Number";
+                const userIdentifier = w.username || w.email || "Unknown User";
+
+                list.innerHTML += `
+                    <div class="bg-slate-800 p-5 rounded-[32px] border border-slate-700/80 shadow-2xl transition-all hover:border-slate-600 flex flex-col gap-4">
+                        
+                        <!-- Top Row: Amount & Action Button -->
+                        <div class="flex justify-between items-center bg-slate-900/40 p-3 rounded-2xl border border-slate-700/40">
+                            <div>
+                                <span class="text-[9px] text-gray-400 font-black uppercase tracking-wider block">Amount to Pay</span>
+                                <span class="text-2xl font-black text-emerald-400 font-mono">₹${w.amount || 0}</span>
+                            </div>
+                            <button id="btn-${doc.id}" onclick="markPaid('${doc.id}')" class="bg-blue-600 hover:bg-blue-500 active:scale-95 transition-all text-white px-5 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider shadow-lg shadow-blue-600/30">
+                                MARK PAID ✅
+                            </button>
+                        </div>
+
+                        <!-- Info Rows: Full Text Display (No Hiding/Truncation) -->
+                        <div class="space-y-2 px-1">
+                            <!-- UPI Details -->
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-700/40 pb-2">
+                                <span class="text-[10px] text-yellow-500 font-black uppercase tracking-wider min-w-[80px]">UPI ID:</span>
+                                <span class="text-sm text-white select-all font-mono break-all bg-slate-900 px-2 py-1 rounded-lg border border-slate-700/30 flex-1 sm:text-right font-bold text-left">${upiAddress}</span>
+                            </div>
+                            
+                            <!-- Phone Details -->
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-slate-700/40 pb-2">
+                                <span class="text-[10px] text-cyan-400 font-black uppercase tracking-wider min-w-[80px]">Phone:</span>
+                                <span class="text-sm text-white select-all font-mono break-all bg-slate-900 px-2 py-1 rounded-lg border border-slate-700/30 flex-1 sm:text-right font-bold text-left">${phoneNumber}</span>
+                            </div>
+
+                            <!-- User Details -->
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                <span class="text-[10px] text-gray-400 font-black uppercase tracking-wider min-w-[80px]">User info:</span>
+                                <span class="text-xs text-gray-300 break-words flex-1 sm:text-right text-left italic">${userIdentifier}</span>
+                            </div>
+                        </div>
+
+                    </div>
+                `;
+            });
+        }, error => {
+            console.error("विड्रॉल डेटा लोड करने में त्रुटि:", error);
+        });
+
+        // MARK PAID FUNCTION
+        async function markPaid(id) {
+            if(confirm("सुनिश्चित करें: क्या आपने इस यूज़र को पैसे ट्रांसफर कर दिए हैं? पैसे भेजने के बाद ही OK करें।")) {
+                const btn = document.getElementById(`btn-${id}`);
+                if(btn) {
+                    btn.disabled = true;
+                    btn.innerText = "UPDATING...";
+                }
+
+                try {
+                    await db.collection("withdraw_requests").doc(id).update({ 
+                        status: "paid",
+                        paidAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    alert("सफलतापूर्वक स्टेटस अपडेट कर दिया गया!");
+                } catch(error) {
+                    console.error("अपडेट त्रुटि:", error);
+                    alert("त्रुटि: " + error.message);
+                    if(btn) {
+                        btn.disabled = false;
+                        btn.innerText = "MARK PAID ✅";
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>

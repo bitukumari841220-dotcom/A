@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Match Control - FireZone Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.17.1/firebase-firestore-compat.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.2s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-slate-900 text-white p-4 md:p-6 pb-40 font-sans">
+
+    <div class="max-w-2xl mx-auto">
+        <!-- Header -->
+        <div class="flex items-center gap-4 mb-8 bg-slate-800/40 p-4 rounded-3xl border border-slate-700/50">
+            <a href="admin-matches.html" class="bg-slate-700 hover:bg-slate-600 p-2 rounded-xl transition-all active:scale-95">⬅️</a>
+            <div>
+                <h2 id="mName" class="text-xl font-black text-blue-500 uppercase italic">Tournament Control</h2>
+                <div id="matchPrizeInfo" class="text-[10px] text-gray-400 font-bold mt-1 uppercase tracking-wider">Loading match rules...</div>
+            </div>
+        </div>
+
+        <!-- Room Section -->
+        <div class="bg-blue-600/10 border border-blue-500/20 p-6 rounded-[32px] mb-8 shadow-2xl">
+            <h3 class="text-[10px] font-black uppercase text-blue-400 mb-4 tracking-widest">Share Room ID & Password</h3>
+            <div class="grid grid-cols-2 gap-4">
+                <input type="text" id="rID" placeholder="Room ID" class="bg-slate-900 p-4 rounded-2xl border border-slate-700 outline-none focus:border-blue-500 text-sm font-mono font-bold">
+                <input type="text" id="rPass" placeholder="Room Pass" class="bg-slate-900 p-4 rounded-2xl border border-slate-700 outline-none focus:border-blue-500 text-sm font-mono font-bold">
+            </div>
+            <button onclick="saveRoom()" class="w-full bg-blue-600 hover:bg-blue-500 py-3.5 rounded-2xl font-black mt-4 shadow-lg active:scale-95 transition-all text-xs uppercase tracking-wider">SET ROOM INFO</button>
+        </div>
+
+        <!-- Automation Controls -->
+        <div class="flex flex-col gap-2 mb-6">
+            <h3 class="text-xs font-black text-gray-500 uppercase px-2 tracking-widest">Rank Tools</h3>
+            <button onclick="autoRankByKills()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-2xl font-black shadow-lg active:scale-95 transition-all text-xs uppercase tracking-wider flex items-center justify-center gap-2">
+                ⚡ Auto Rank by Highest Kills (Make Winner)
+            </button>
+        </div>
+
+        <!-- List Header -->
+        <div class="flex justify-between items-center mb-1 px-2">
+            <h3 class="text-xs font-black text-gray-500 uppercase tracking-widest">Drag Players to Adjust Rank Manually</h3>
+        </div>
+        <p class="text-[10px] text-yellow-500/80 mb-4 px-2 italic uppercase font-bold">⚠️ Rank 1 वाले खिलाड़ी को 'Winner Prize' + 'Kill Prize' दोनों मिलेंगे। बाकी को सिर्फ Kill Prize मिलेगा।</p>
+        
+        <div id="sortList" class="space-y-3 mb-10">
+            <!-- Players load here -->
+        </div>
+
+        <!-- Action Button -->
+        <button onclick="saveAllResults()" class="fixed bottom-6 left-4 right-4 max-w-2xl mx-auto bg-green-600 hover:bg-green-500 py-4 rounded-2xl font-black shadow-2xl uppercase text-sm tracking-[3px] active:scale-95 transition-all z-50">
+            Distribute Prizes & Save Ranks 🏆
+        </button>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyC8NQ_bmJl-qRy0H_AzJ968bWwzhwMAsGw",
+            authDomain: "firezone-a0a02.firebaseapp.com",
+            projectId: "firezone-a0a02",
+            storageBucket: "firezone-a0a02.firebasestorage.app",
+            messagingSenderId: "1068854164782",
+            appId: "1:1068854164782:web:8a627cdf687583debecebf"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const mId = new URLSearchParams(window.location.search).get('id');
+
+        let winPrize = 0;
+        let perKillPrize = 0;
+
+        // 1. मैच रूल्स लोड करना
+        db.collection("matches").doc(mId).get().then(doc => {
+            if(doc.exists) {
+                const m = doc.data();
+                document.getElementById('mName').innerText = m.title || "Match Control";
+                document.getElementById('rID').value = m.roomID || "";
+                document.getElementById('rPass').value = m.roomPass || "";
+                
+                winPrize = Number(m.winPrize || m.winnerPrize || 0);
+                perKillPrize = Number(m.perKill || m.killPrize || 0);
+                
+                document.getElementById('matchPrizeInfo').innerText = `Winner: ₹${winPrize} | Per Kill: ₹${perKillPrize}`;
+            }
+        });
+
+        // 2. खिलाड़ियों को लोड करना
+        db.collection("registrations").where("matchId", "==", mId).get().then(snap => {
+            const list = document.getElementById('sortList');
+            list.innerHTML = "";
+            if(snap.empty) {
+                list.innerHTML = "<p class='text-center py-10 text-gray-500 italic uppercase text-xs font-bold'>No players joined yet.</p>";
+                return;
+            }
+            
+            let count = 0;
+            const fragment = document.createDocumentFragment();
+
+            snap.forEach(doc => {
+                count++;
+                const p = doc.data();
+                const isFirst = count === 1;
+                const finalPlayerUid = p.userId || p.uid || "";
+                const regId = doc.id;
+
+                const wrapper = document.createElement('div');
+                wrapper.className = `bg-slate-800 p-4 rounded-2xl border ${isFirst ? 'border-yellow-500/50 bg-yellow-500/5' : 'border-slate-700'} flex flex-col gap-3 transition-all item-row shadow-md`;
+                wrapper.setAttribute('data-id', regId);
+                wrapper.setAttribute('data-uid', finalPlayerUid);
+
+                wrapper.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div class="flex items-center gap-3 truncate cursor-pointer" onclick="toggleAndFetchProfile('${regId}', '${finalPlayerUid}')">
+                            <span class="text-gray-600 font-mono select-none drag-handle cursor-move">☰</span>
+                            <div class="truncate">
+                                <div class="flex items-center gap-2">
+                                    <p class="font-black text-sm uppercase truncate text-slate-100 hover:text-blue-400 transition-colors">${p.username || 'Unknown'} ℹ️</p>
+                                    <span class="rank-badge text-[9px] px-2 py-0.5 rounded-full font-black ${isFirst ? 'bg-yellow-500 text-slate-900' : 'bg-slate-700 text-gray-400'}">RANK ${count}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-[9px] text-gray-400 font-black uppercase font-mono">Kills:</span>
+                            <input id="kill-${regId}" type="number" value="${p.kills || 0}" min="0" oninput="updateRankStyles()" class="kill-input w-14 bg-slate-900 p-2 rounded-xl text-center border border-slate-700 font-black text-emerald-400 outline-none focus:border-emerald-500 text-sm">
+                        </div>
+                    </div>
+                    <!-- Live Profile Section -->
+                    <div id="profile-${regId}" class="hidden bg-slate-900/80 border border-slate-700/50 rounded-xl p-4 text-xs flex flex-col gap-3 animate-fadeIn">
+                        <div class="text-gray-400 font-mono text-[11px] space-y-1" id="details-${regId}">
+                            <p class="text-blue-400 animate-pulse">🔄 Fetching complete profile from database...</p>
+                        </div>
+                        <div class="flex justify-end border-t border-slate-700/50 pt-2">
+                            <button onclick="kickPlayer('${regId}', '${p.username || 'Unknown'}')" class="bg-red-600/20 text-red-400 hover:bg-red-600 hover:text-white px-3 py-1.5 rounded-xl font-bold border border-red-500/30 transition-all active:scale-95 text-[10px] uppercase tracking-wider">
+                                🚫 Kick From Match
+                            </button>
+                        </div>
+                    </div>
+                `;
+                fragment.appendChild(wrapper);
+            });
+
+            list.appendChild(fragment);
+
+            new Sortable(list, {
+                animation: 180,
+                handle: '.drag-handle',
+                ghostClass: 'bg-indigo-600/20',
+                onEnd: function () {
+                    updateRankStyles();
+                }
+            });
+        });
+
+        // 3. यूजर प्रोफाइल डेटा लाइव लोड करना (सभी फील्ड्स के साथ)
+        function toggleAndFetchProfile(regId, uid) {
+            const profDiv = document.getElementById(`profile-${regId}`);
+            const detailsDiv = document.getElementById(`details-${regId}`);
+            
+            if(!profDiv.classList.contains('hidden')) {
+                profDiv.classList.add('hidden');
+                return;
+            }
+            
+            profDiv.classList.remove('hidden');
+
+            if(!uid || uid === "undefined" || uid.trim() === "") {
+                detailsDiv.innerHTML = `<p class="text-red-400 font-bold">⚠️ Error: Invalid User UID</p>`;
+                return;
+            }
+
+            db.collection("users").doc(uid).get().then(userDoc => {
+                if(userDoc.exists) {
+                    const u = userDoc.data();
+                    
+                    const gameUser = u.username || u.gameUsername || 'Not Set';
+                    const fullName = u.name || 'Not Set';
+                    const userPhone = u.phone || u.mobile || 'Not Set';
+                    const altEmail = u.altEmail || 'Not Set';
+                    const photoUrl = u.photo || '';
+                    
+                    let photoHTML = photoUrl 
+                        ? `<div class="mt-2"><span class="text-gray-500 font-bold">PHOTO URL:</span> <a href="${photoUrl}" target="_blank" class="text-orange-400 underline break-all">${photoUrl}</a></div>` 
+                        : `<p><span class="text-gray-500 font-bold">PHOTO URL:</span> <span class="text-gray-400 italic">No photo link provided</span></p>`;
+
+                    detailsDiv.innerHTML = `
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-slate-300">
+                            <p class="sm:col-span-2"><span class="text-orange-500 font-black">🎮 GAME USERNAME(FF ID ):</span> <span class="font-black text-yellow-400 text-sm uppercase bg-slate-800 px-2 py-0.5 rounded border border-slate-700">${gameUser}</span></p>
+                            <p><span class="text-gray-500 font-bold">FF UID :</span> <span class="font-bold text-white">${fullName}</span></p>
+                            <p><span class="text-gray-500 font-bold">WHATSAPP NO:</span> <span class="font-bold text-white">${userPhone}</span></p>
+                            <p><span class="text-gray-500 font-bold">ALT GMAIL:</span> <span class="font-bold text-white">${altEmail}</span></p>
+                            <p><span class="text-gray-500 font-bold">WALLET COINS:</span> <span class="font-bold text-emerald-400">₹${u.coins || 0}</span></p>
+                            <p><span class="text-gray-500 font-bold">AUTH EMAIL:</span> <span class="text-xs text-gray-400">${u.email || 'Not Set'}</span></p>
+                            <div class="sm:col-span-2 border-t border-slate-800 pt-2 mt-1">
+                                ${photoHTML}
+                            </div>
+                            <p class="sm:col-span-2 text-[9px] text-slate-500 font-mono mt-1">USER UID: ${uid}</p>
+                        </div>
+                    `;
+                } else {
+                    detailsDiv.innerHTML = `
+                        <p class="text-yellow-500 font-bold">⚠️ Profile document not found in 'users' collection.</p>
+                        <p class="mt-1 text-[10px] text-gray-500">UID: ${uid}</p>
+                    `;
+                }
+            }).catch(err => {
+                detailsDiv.innerHTML = `<p class="text-red-400">Error: ${err.message}</p>`;
+            });
+        }
+
+        // 4. यूजर को मैच से किक करना
+        function kickPlayer(regId, username) {
+            if(confirm(`क्या आप वाकई ${username} को इस मैच से बाहर निकालना चाहते हैं?`)) {
+                db.collection("registrations").doc(regId).delete().then(() => {
+                    alert(`${username} को मैच से सफलतापूर्वक हटा दिया गया है!`);
+                    const row = document.querySelector(`.item-row[data-id="${regId}"]`);
+                    if(row) {
+                        row.remove();
+                        updateRankStyles();
+                    }
+                }).catch(err => {
+                    alert("खिलाड़ी को हटाने में त्रुटि: " + err.message);
+                });
+            }
+        }
+
+        function updateRankStyles() {
+            const rows = document.querySelectorAll('.item-row');
+            rows.forEach((row, index) => {
+                const badge = row.querySelector('.rank-badge');
+                const rankNum = index + 1;
+                badge.innerText = `RANK ${rankNum}`;
+                
+                if(rankNum === 1) {
+                    row.classList.remove('border-slate-700');
+                    row.classList.add('border-yellow-500/50', 'bg-yellow-500/5');
+                    badge.classList.remove('bg-slate-700', 'text-gray-400');
+                    badge.classList.add('bg-yellow-500', 'text-slate-900');
+                } else {
+                    row.classList.remove('border-yellow-500/50', 'bg-yellow-500/5');
+                    row.classList.add('border-slate-700');
+                    badge.classList.remove('bg-yellow-500', 'text-slate-900');
+                    badge.classList.add('bg-slate-700', 'text-gray-400');
+                }
+            });
+        }
+
+        function autoRankByKills() {
+            const list = document.getElementById('sortList');
+            const rows = Array.from(document.querySelectorAll('.item-row'));
+            
+            if(rows.length === 0) return alert("No players available to sort.");
+
+            rows.sort((a, b) => {
+                const idA = a.getAttribute('data-id');
+                const idB = b.getAttribute('data-id');
+                const killsA = parseInt(document.getElementById(`kill-${idA}`).value) || 0;
+                const killsB = parseInt(document.getElementById(`kill-${idB}`).value) || 0;
+                return killsB - killsA;
+            });
+
+            list.innerHTML = "";
+            rows.forEach(row => list.appendChild(row));
+            updateRankStyles();
+            
+            const winnerName = rows[0].querySelector('.font-black').innerText;
+            alert(`⚡ सबसे ज़्यादा किल के आधार पर लिस्ट सॉर्ट कर दी गई है!\nWinner (Rank 1): ${winnerName}`);
+        }
+
+        function saveRoom() {
+            db.collection("matches").doc(mId).update({
+                roomID: document.getElementById('rID').value,
+                roomPass: document.getElementById('rPass').value
+            }).then(() => alert("Room Info Published!"));
+        }
+
+        async function saveAllResults() {
+            const listItems = document.querySelectorAll('.item-row');
+            if(listItems.length === 0) return alert("No players to save.");
+
+            if(confirm("क्या आप रिजल्ट फाइनल करना चाहते हैं? रैंक 1 वाले को Winner + Kill प्राइज और बाकी को सिर्फ Kill प्राइज मिलेगा।")) {
+                
+                const mainBtn = document.querySelector('button[onclick="saveAllResults()"]');
+                mainBtn.disabled = true;
+                mainBtn.innerText = "PROCESSING PRIZES... PLEASE WAIT";
+
+                try {
+                    const matchDocRefresh = await db.collection("matches").doc(mId).get();
+                    if(matchDocRefresh.exists) {
+                        const mData = matchDocRefresh.data();
+                        winPrize = Number(mData.winPrize || mData.winnerPrize || 0);
+                        perKillPrize = Number(mData.perKill || mData.killPrize || 0);
+                    }
+
+                    for(let i = 0; i < listItems.length; i++) {
+                        const regId = listItems[i].getAttribute('data-id');
+                        const playerUid = listItems[i].getAttribute('data-uid');
+                        const killCount = parseInt(document.getElementById(`kill-${regId}`).value) || 0;
+                        const finalRank = i + 1;
+
+                        let totalEarning = 0;
+                        totalEarning += (killCount * perKillPrize);
+                        
+                        if(finalRank === 1) {
+                            totalEarning += winPrize;
+                        }
+
+                        await db.collection("registrations").doc(regId).update({
+                            rank: finalRank,
+                            kills: killCount,
+                            earning: totalEarning,
+                            prizeEarned: totalEarning,
+                            isWinner: finalRank === 1
+                        });
+
+                        if(totalEarning > 0 && playerUid && playerUid !== "undefined" && playerUid.trim() !== "") {
+                            const userRef = db.collection("users").doc(playerUid);
+                            
+                            await db.runTransaction(async (transaction) => {
+                                const userDoc = await transaction.get(userRef);
+                                let currentCoins = 0;
+                                if(userDoc.exists) {
+                                    currentCoins = Number(userDoc.data().coins || 0);
+                                }
+                                transaction.set(userRef, { coins: currentCoins + totalEarning }, { merge: true });
+                            });
+                            console.log(`सफलतापूर्वक ₹${totalEarning} यूजर आईडी: ${playerUid} के वॉलेट में भेजे गए।`);
+                        }
+                    }
+
+                    await db.collection("matches").doc(mId).update({ status: "completed" });
+
+                    alert("🎉 सभी रिजल्ट सुरक्षित हो गए हैं और विनर प्राइज + किल प्राइज दोनों तुरंत यूज़र्स के वॉलेट में क्रेडिट कर दिए गए हैं!");
+                    window.location.href = "admin-results.html";
+
+                } catch (error) {
+                    console.error("Error distributing prizes:", error);
+                    alert("त्रुटि: " + error.message);
+                    mainBtn.disabled = false;
+                    mainBtn.innerText = "Distribute Prizes & Save Ranks 🏆";
+                }
+            }
+        }
+    </script>
+</body>
+</html>
